@@ -110,9 +110,6 @@ type Logger struct {
 	size int64
 	file *os.File
 	mu   sync.Mutex
-
-	millCh    chan bool
-	startMill sync.Once
 }
 
 var (
@@ -126,6 +123,9 @@ var (
 	// variable so tests can mock it out and not need to write megabytes of data
 	// to disk.
 	megabyte = 1024 * 1024
+
+	millCh    chan *Logger
+	startMill sync.Once
 )
 
 // Write implements io.Writer.  If a write would cause the log file to be larger
@@ -375,8 +375,8 @@ func (l *Logger) millRunOnce() error {
 
 // millRun runs in a goroutine to manage post-rotation compression and removal
 // of old log files.
-func (l *Logger) millRun() {
-	for range l.millCh {
+func millRun() {
+	for l := range millCh {
 		// what am I going to do, log this?
 		_ = l.millRunOnce()
 	}
@@ -385,12 +385,12 @@ func (l *Logger) millRun() {
 // mill performs post-rotation compression and removal of stale log files,
 // starting the mill goroutine if necessary.
 func (l *Logger) mill() {
-	l.startMill.Do(func() {
-		l.millCh = make(chan bool, 1)
-		go l.millRun()
+	startMill.Do(func() {
+		millCh = make(chan *Logger, 100)
+		go millRun()
 	})
 	select {
-	case l.millCh <- true:
+	case millCh <- l:
 	default:
 	}
 }
